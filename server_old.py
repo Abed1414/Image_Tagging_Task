@@ -1,4 +1,4 @@
-import os # keras._tf_keras.keras
+import os 
 from PIL import Image
 from flask import Flask, request, jsonify
 import numpy as np
@@ -104,7 +104,7 @@ def classify_image_with_model(image_path, model):
     predictions = model.predict(img_array)
     return predictions
 
-def categorize_image(image_path, model):
+def categorize_image(image_path, model, threshold=0.0001):
     matched_tags = []
     
     dominant_colors = extract_dominant_colors(image_path, num_colors=3)
@@ -123,16 +123,26 @@ def categorize_image(image_path, model):
     style_predictions = predictions[0][len(type_labels):len(type_labels) + len(style_labels)]
     usage_predictions = predictions[0][len(type_labels) + len(style_labels):]
     
-    # Get the top 3 types and styles based on their prediction scores
     top_types = np.argsort(type_predictions)[-3:][::-1]
     top_styles = np.argsort(style_predictions)[-3:][::-1]
     top_usage = np.argmax(usage_predictions)
     
-    for i, type_index in enumerate(top_types):
-        matched_tags.append(f"TYPE{i+1}: {type_labels[type_index]}")
+    filtered_types = [type_labels[i] for i in top_types if type_predictions[i] >= threshold]
+    filtered_styles = [style_labels[i] for i in top_styles if style_predictions[i] >= threshold]
     
-    for i, style_index in enumerate(top_styles):
-        matched_tags.append(f"STYLE{i+1}: {style_labels[style_index]}")
+    if not filtered_types:
+        filtered_types = [type_labels[top_types[0]]]
+    if not filtered_styles:
+        filtered_styles = [style_labels[top_styles[0]]]
+    
+    filtered_types = filtered_types[:3]
+    filtered_styles = filtered_styles[:3]
+    
+    for i, type_label in enumerate(filtered_types):
+        matched_tags.append(f"TYPE{i+1}: {type_label}")
+    
+    for i, style_label in enumerate(filtered_styles):
+        matched_tags.append(f"STYLE{i+1}: {style_label}")
     
     matched_tags.append(f"USAGE: {usage_labels[top_usage]}")
     
@@ -149,7 +159,7 @@ def upload_image():
         file.save(file_path)
         
         model = build_custom_model()
-        result = categorize_image(file_path, model)
+        result = categorize_image(file_path, model, threshold=0.001)
         return jsonify({"status": result})
 
     return jsonify({"error": "No file provided"}), 400
